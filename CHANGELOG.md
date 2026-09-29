@@ -4,6 +4,18 @@
 
 ## [Unreleased]
 
+## [0.2.60] - 2026-09-29
+
+### Fixed
+
+- 放宽 `@deepseek-ai/dsh-mcp-client` peer 范围以支持 DSH `0.2.x`，避免插件在组合阶段被整体跳过、全部 MCP Server 消失（#101）。
+- 忽略工具 Schema 读取或 restriction 更新期间同步触发的嵌套 `tools/change`，阻断与工具重注册插件组合时的永久重扫和 100% CPU 死循环（#99）。
+- 连接范围选择器列出全部可用 Workspace；没有当前会话时仍可显式选择目标项目，不再只能保存为 profile 全局（#100）。
+
+### Verification
+
+- 新增治理与作用域控制器的同步重入回归、无当前会话的 Workspace 列表回归，以及 DSH `0.2.x` peer 范围门禁。
+
 ## [0.2.59] - 2026-09-25
 
 ### Fixed

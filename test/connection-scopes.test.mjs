@@ -90,13 +90,21 @@ test('作用域持久化失败不会改变内存或产生凭据副本', async ()
   assert.deepEqual(service.snapshot().bindings, []);
 });
 
-function scopeHost(names) {
+function scopeHost(names, { emitFromSchemas = false } = {}) {
   const guards = new Set();
   const listeners = new Map();
   const agents = [];
+  let schemaReads = 0;
+  const emit = (event, payload = {}) => {
+    for (const listener of listeners.get(event) ?? []) listener(payload);
+  };
   const ctx = {
     tools: {
-      schemas: () => names.map((name) => ({ name })),
+      schemas: () => {
+        schemaReads += 1;
+        if (emitFromSchemas) emit('tools/change');
+        return names.map((name) => ({ name }));
+      },
       guard(fn) { guards.add(fn); return () => guards.delete(fn); },
       restrict() {},
     },
@@ -127,6 +135,8 @@ function scopeHost(names) {
   return {
     ctx, agentCtx, agents, guards, agent,
     denied(value) { return new Set([...value.restrictions].flatMap((entry) => [...entry])); },
+    emit,
+    schemaReads: () => schemaReads,
   };
 }
 
@@ -160,4 +170,23 @@ test('Host 对 project-only 工具同时收窄可见性并在执行层 fail clos
   controller.dispose();
   assert.equal(host.guards.size, 0);
   assert.equal(outside.restrictions.size, 0);
+});
+
+test('作用域同步忽略 schemas 同步触发的嵌套 tools/change，后续独立变更仍生效', () => {
+  const projectTool = 'mcp__project-server__read';
+  const host = scopeHost([projectTool], { emitFromSchemas: true });
+  const outside = host.agent('outside', 'workspace-b');
+  const controller = createHostScopeController(host.ctx, {
+    getRecords: () => [{ key: 'project', serverName: 'project-server' }],
+    getBindings: () => [{ connectionKey: 'project', global: false, projects: ['workspace-a'] }],
+    workspaceIdForAgent: (agent) => agent.workspaceId,
+  });
+
+  controller.mountAgents(host.agentCtx);
+  assert.equal(host.schemaReads(), 1);
+  assert.deepEqual([...host.denied(outside)], [projectTool]);
+
+  host.emit('tools/change');
+  assert.equal(host.schemaReads(), 2);
+  controller.dispose();
 });

@@ -13,9 +13,9 @@
 
 Desktop 和 Web 使用同一个 Host API：
 
-1. 市场从父级 DSH 客户端读取当前 Workspace；
+1. 市场从父级 DSH 客户端和 Host Workspace Registry 读取当前 Workspace 及可用 Workspace 列表；
 2. OAuth、免密、Bearer/API Key、JSON 导入和 URL 安装都会在提交前显示目标范围；
-3. 已选择 Workspace 时页面默认为“当前项目”，也可显式选择“所有项目（全局）”；
+3. 已选择 Workspace 时页面默认为“当前项目”；没有当前会话时仍可从列表显式选择任一 Workspace，或选择“所有项目（全局）”；
 4. 项目范围只在 Host 支持最终执行 Guard，且目标 Workspace 仍存在时才能保存。
 
 对话工具的 `scope` 可传 `project` 或 `global`；`project` 同时要求 `workspaceId`。旧版客户端未传作用域时，新连接按兼容规则归为当前 profile 全局。

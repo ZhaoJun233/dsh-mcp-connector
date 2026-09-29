@@ -96,8 +96,9 @@ test('工具删除或重命名只把旧规则标成 stale，不误命中新工�
   assert.equal(resolveGovernancePolicy({ connectorId: 'acme', serverName: 'search', toolName: 'new_name' }, rules).effect, 'allow');
 });
 
-function governanceHost(initialNames, initialAgents = []) {
+function governanceHost(initialNames, initialAgents = [], { emitFromSchemas = false } = {}) {
   let names = [...initialNames];
+  let schemaReads = 0;
   const guards = new Set();
   const listeners = new Map();
   const agents = [...initialAgents];
@@ -105,7 +106,11 @@ function governanceHost(initialNames, initialAgents = []) {
     for (const listener of listeners.get(event) ?? []) listener(payload);
   };
   const tools = {
-    schemas() { return names.map((name) => ({ name, description: '', parameters: {} })); },
+    schemas() {
+      schemaReads += 1;
+      if (emitFromSchemas) emit('tools/change');
+      return names.map((name) => ({ name, description: '', parameters: {} }));
+    },
     guard(fn) { guards.add(fn); return () => guards.delete(fn); },
     restrict() {},
   };
@@ -142,6 +147,7 @@ function governanceHost(initialNames, initialAgents = []) {
     ctx: { tools }, agentCtx, agents, guards, emit, makeAgent,
     setNames(next) { names = [...next]; emit('tools/change'); },
     denied(agent) { return new Set([...agent.restrictions].flatMap((set) => [...set])); },
+    schemaReads: () => schemaReads,
   };
 }
 
@@ -183,4 +189,23 @@ test('Host controller 对多 Server 真正收窄 Agent schema 并以 guard 拒�
   assert.equal(host.guards.size, 0);
   assert.equal(firstAgent.restrictions.size, 0);
   assert.equal(secondAgent.restrictions.size, 0);
+});
+
+test('治理同步忽略 schemas 与 restrict 同步触发的嵌套 tools/change，避免永久重扫', () => {
+  const deniedTool = publicToolName('search', 'write');
+  const host = governanceHost([deniedTool], [], { emitFromSchemas: true });
+  const agent = host.makeAgent('nested-change');
+  host.agents.push(agent);
+  const controller = createHostGovernanceController(host.ctx, {
+    getRules: () => [rule('connection', 'deny', 'acme')],
+    getRecords: () => [{ connectorId: 'acme', serverName: 'search', enabled: true }],
+  });
+
+  controller.mountAgents(host.agentCtx);
+  assert.equal(host.schemaReads(), 1);
+  assert.deepEqual([...host.denied(agent)], [deniedTool]);
+
+  host.emit('tools/change');
+  assert.equal(host.schemaReads(), 2, '独立的后续变更仍应触发一次同步');
+  controller.dispose();
 });

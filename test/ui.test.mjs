@@ -307,8 +307,11 @@ test('详情页提供连接、Server、Tool 三层策略预览、应用和回滚
 test('新连接显示 project/global 目标，范围变更先预览影响再应用且可回滚', () => {
   assert.match(uiSource, /mcp-connector:workspace-context-request/);
   assert.match(clientSource, /mcp-connector:workspace-context/);
+  assert.match(clientSource, /workspaceOptions: \(\) => availableWorkspaceContexts\(ctx\)/);
+  assert.match(uiSource, /let availableWorkspaces = \[\]/);
   assert.match(uiSource, /function scopeFieldHtml/);
-  assert.match(uiSource, /当前项目：\$\{esc\(currentWorkspace\.title\)\}/);
+  assert.match(uiSource, /project:\$\{workspace\.workspaceId\}/);
+  assert.match(uiSource, /可选择任一 Workspace/);
   assert.match(uiSource, /所有项目（全局）/);
   assert.match(uiSource, /function openConnectScope\(connectorId\)/);
   assert.match(uiSource, /call\('connect', \{ connectorId, \.\.\.scopeParams \}/);

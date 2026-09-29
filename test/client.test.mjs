@@ -34,7 +34,13 @@ async function loadClient({
   return plugin;
 }
 
-function clientContext({ workspaceId = 'workspace-1', settingsScope, workspaceNavigation = 'legacy' } = {}) {
+function clientContext({
+  workspaceId = 'workspace-1',
+  workspaceItems,
+  recentWorkspaceId = workspaceId ?? undefined,
+  settingsScope,
+  workspaceNavigation = 'legacy',
+} = {}) {
   const registrations = new Map();
   const calls = [];
   const shell = {
@@ -45,8 +51,8 @@ function clientContext({ workspaceId = 'workspace-1', settingsScope, workspaceNa
   const workspaces = {
     list: {
       getSnapshot: () => ({
-        items: workspaceId == null ? [] : [{ workspaceId, sessionIds: ['session-current'] }],
-        recentWorkspaceId: workspaceId ?? undefined,
+        items: workspaceItems ?? (workspaceId == null ? [] : [{ workspaceId, sessionIds: ['session-current'] }]),
+        recentWorkspaceId,
       }),
     },
   };
@@ -480,6 +486,29 @@ test('市场 iframe 可读取当前 Workspace 作为项目连接作用域', asyn
     workspaceId: 'workspace-scope',
     title: 'workspace-scope',
   });
+  assert.deepEqual(props.workspaceOptions(), [{
+    workspaceId: 'workspace-scope',
+    title: 'workspace-scope',
+  }]);
+});
+
+test('没有当前会话时仍向市场提供全部 Workspace 供用户显式选择', async () => {
+  const plugin = await loadClient();
+  const { ctx, registrations } = clientContext({
+    workspaceId: null,
+    recentWorkspaceId: undefined,
+    workspaceItems: [
+      { workspaceId: 'workspace-a', title: '项目 A', sessionIds: [] },
+      { workspaceId: 'workspace-b', title: '项目 B', sessionIds: [] },
+    ],
+  });
+  plugin.apply(ctx);
+  const props = registrations.get('shell.overlay').options.inject();
+  assert.equal(props.workspaceContext(), null);
+  assert.deepEqual(props.workspaceOptions(), [
+    { workspaceId: 'workspace-a', title: '项目 A' },
+    { workspaceId: 'workspace-b', title: '项目 B' },
+  ]);
 });
 
 test('没有工作空间时给出明确错误，不静默失败', async () => {

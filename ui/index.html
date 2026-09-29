@@ -590,6 +590,7 @@
   let communityCtaEligible = false;
   let communityCtaDismissed = false;
   let currentWorkspace = null;
+  let availableWorkspaces = [];
   let scopeRevision = 0;
   let scopeRollbackRevision = null;
   let pendingScopeKey = null;
@@ -660,15 +661,34 @@
     showToast(message || (ok ? '已带入新会话' : '打开新会话失败，请重试'), ok);
   }
 
+  function normalizeWorkspaceOptions(input) {
+    const byId = new Map();
+    for (const item of Array.isArray(input) ? input : []) {
+      const workspaceId = typeof item?.workspaceId === 'string' ? item.workspaceId : typeof item?.id === 'string' ? item.id : '';
+      if (!workspaceId) continue;
+      byId.set(workspaceId, { workspaceId, title: String(item.title || workspaceId) });
+    }
+    if (currentWorkspace && !byId.has(currentWorkspace.workspaceId)) {
+      byId.set(currentWorkspace.workspaceId, currentWorkspace);
+    }
+    return [...byId.values()];
+  }
+
+  function updateAvailableWorkspaces(input) {
+    availableWorkspaces = normalizeWorkspaceOptions(input);
+  }
+
   window.addEventListener('message', (event) => {
     if (event.origin !== window.location.origin || event.source !== window.parent) return;
     if (event.data?.type === WORKSPACE_CONTEXT_RESULT_TYPE) {
       const workspace = event.data.workspace;
       const previousWorkspaceId = currentWorkspace?.workspaceId ?? null;
+      const previousWorkspaceOptions = JSON.stringify(availableWorkspaces);
       currentWorkspace = workspace && typeof workspace.workspaceId === 'string'
         ? { workspaceId: workspace.workspaceId, title: String(workspace.title || workspace.workspaceId) }
         : null;
-      if ((currentWorkspace?.workspaceId ?? null) !== previousWorkspaceId) {
+      updateAvailableWorkspaces(event.data.workspaces);
+      if ((currentWorkspace?.workspaceId ?? null) !== previousWorkspaceId || JSON.stringify(availableWorkspaces) !== previousWorkspaceOptions) {
         explorerSequence++; explorerDetailSequence++;
         explorerData = null; explorerOffset = 0;
         explorerFilter = { connectionKey: '', serverName: '', status: '' };
@@ -689,16 +709,25 @@
   }
 
   function scopeFieldHtml({ id = 'cfg-scope', selected } = {}) {
-    const projectAvailable = currentWorkspace !== null;
-    const value = selected || (projectAvailable ? 'project' : 'global');
-    return `<label for="${esc(id)}">连接范围</label><select id="${esc(id)}"><option value="project" ${value === 'project' ? 'selected' : ''} ${projectAvailable ? '' : 'disabled'}>${projectAvailable ? `当前项目：${esc(currentWorkspace.title)}` : '当前项目（请先选择 Workspace）'}</option><option value="global" ${value === 'global' ? 'selected' : ''}>所有项目（全局）</option></select><div class="field-help">项目范围只在当前 Workspace 的 Agent 中可见；全局范围由所有 Workspace 继承。范围绑定不保存或复制凭据。</div>`;
+    const defaultValue = currentWorkspace ? `project:${currentWorkspace.workspaceId}` : 'global';
+    const value = selected === 'project'
+      ? defaultValue
+      : selected || defaultValue;
+    const projectOptions = availableWorkspaces.map((workspace) => {
+      const optionValue = `project:${workspace.workspaceId}`;
+      const prefix = workspace.workspaceId === currentWorkspace?.workspaceId ? '当前项目' : '项目';
+      return `<option value="${esc(optionValue)}" ${value === optionValue ? 'selected' : ''}>${prefix}：${esc(workspace.title)}</option>`;
+    }).join('');
+    const unavailable = projectOptions ? '' : '<option value="" disabled>暂无可用 Workspace</option>';
+    return `<label for="${esc(id)}">连接范围</label><select id="${esc(id)}">${projectOptions}${unavailable}<option value="global" ${value === 'global' ? 'selected' : ''}>所有项目（全局）</option></select><div class="field-help">可选择任一 Workspace；项目范围只在该 Workspace 的 Agent 中可见。全局范围由所有 Workspace 继承，范围绑定不保存或复制凭据。</div>`;
   }
 
   function selectedScopeParams(id = 'cfg-scope') {
-    const scope = $(`#${id}`)?.value || 'global';
-    if (scope === 'project') {
-      if (!currentWorkspace) throw new Error('请先选择一个 Workspace，再使用项目范围');
-      return { scope, workspaceId: currentWorkspace.workspaceId };
+    const value = $(`#${id}`)?.value || 'global';
+    if (value.startsWith('project:')) {
+      const workspaceId = value.slice('project:'.length);
+      if (!workspaceId) throw new Error('请选择一个 Workspace，再使用项目范围');
+      return { scope: 'project', workspaceId };
     }
     return { scope: 'global' };
   }
@@ -1133,7 +1162,10 @@
     syncMarketNav();
     main.innerHTML = '<div class="empty">加载中…</div>';
     const [r, status] = await Promise.all([call('catalog', workspaceParams()), call('status', workspaceParams())]);
-    if (status.ok) setTabCount('installed', (status.detail?.items ?? []).length);
+    if (status.ok) {
+      updateAvailableWorkspaces(status.detail?.scope?.workspaces);
+      setTabCount('installed', (status.detail?.items ?? []).length);
+    }
     if (!r.ok) { main.innerHTML = `<div class="empty">${esc(r.message)}</div>`; return; }
     const items = r.detail?.items ?? [];
     setTabCount('market', items.length);
@@ -1284,6 +1316,7 @@
     main.innerHTML = '<div class="empty">加载中…</div>';
     const [r, migration] = await Promise.all([call('status', workspaceParams()), call('migrationPreview', { scanStored: false })]);
     if (!r.ok) { main.innerHTML = `<div class="empty">${esc(r.message)}</div>`; return; }
+    updateAvailableWorkspaces(r.detail?.scope?.workspaces);
     const items = r.detail?.items ?? [];
     installedItems = items;
     scopeRevision = Number.isInteger(r.detail?.scope?.revision) ? r.detail.scope.revision : 0;
