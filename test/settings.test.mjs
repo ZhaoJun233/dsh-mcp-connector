@@ -37,6 +37,16 @@ test('settings namespace is optional and uses the composed config as its base', 
   assert.deepEqual(registration.options.base, { [SHOW_SIDEBAR_ENTRY_FIELD]: false });
 });
 
+test('hosts with settings injection but no register method keep loading', () => {
+  const ctx = {
+    inject(_services, callback) {
+      callback({ settings: {} });
+    },
+  };
+
+  assert.doesNotThrow(() => installConnectorSettings(ctx, {}));
+});
+
 test('hosts without optional injection support keep loading', () => {
   assert.doesNotThrow(() => installConnectorSettings({}, {}));
 });
