@@ -50,3 +50,24 @@ test('hosts with settings injection but no register method keep loading', () => 
 test('hosts without optional injection support keep loading', () => {
   assert.doesNotThrow(() => installConnectorSettings({}, {}));
 });
+
+test('missing or non-callable optional settings APIs keep loading', () => {
+  for (const injected of [undefined, null, {}, { settings: null }, { settings: { register: true } }]) {
+    assert.doesNotThrow(() => installConnectorSettings({
+      inject(_services, callback) { callback(injected); },
+    }));
+  }
+});
+
+test('settings registration preserves receiver and does not swallow provider errors', () => {
+  const failure = new Error('provider registration failed');
+  const settings = {
+    register() {
+      assert.equal(this, settings);
+      throw failure;
+    },
+  };
+  assert.throws(() => installConnectorSettings({
+    inject(_services, callback) { callback({ settings }); },
+  }), (error) => error === failure);
+});
